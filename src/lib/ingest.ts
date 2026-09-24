@@ -1,6 +1,12 @@
 import Parser from "rss-parser";
 import { db } from "./db";
-import { SEGMENTS, type SegmentId } from "./segments";
+import {
+  SEGMENTS,
+  WATCHED_SITES,
+  matchSegments,
+  watchedSiteQuery,
+  type SegmentId,
+} from "./segments";
 import type { ArticleRow } from "./types";
 
 type FeedItem = {
@@ -36,12 +42,20 @@ function splitTitleSource(rawTitle: string): { title: string; source: string | n
   };
 }
 
+// Google News titles end with " - <source>"; strip it so publisher names don't pollute trends.
+function stripSourceSuffix(title: string, source: string): string {
+  const suffix = ` - ${source}`;
+  return title.endsWith(suffix) ? title.slice(0, -suffix.length).trim() : title;
+}
+
 function extractSource(item: FeedItem, fallbackTitle: string): { title: string; source: string | null } {
   if (typeof item.source === "string" && item.source.trim()) {
-    return { title: fallbackTitle, source: item.source.trim() };
+    const source = item.source.trim();
+    return { title: stripSourceSuffix(fallbackTitle, source), source };
   }
   if (item.source && typeof item.source === "object" && item.source._) {
-    return { title: fallbackTitle, source: item.source._.trim() };
+    const source = item.source._.trim();
+    return { title: stripSourceSuffix(fallbackTitle, source), source };
   }
   return splitTitleSource(fallbackTitle);
 }
@@ -50,6 +64,7 @@ export interface IngestResult {
   newArticles: number;
   updatedArticles: number;
   perSegment: Record<SegmentId, { fetched: number; errors: string[] }>;
+  watchedSites: Record<string, { fetched: number; unmatched: number; errors: string[] }>;
   durationMs: number;
 }
 
@@ -82,7 +97,31 @@ export async function ingestAll(): Promise<IngestResult> {
   let newArticles = 0;
   let updatedArticles = 0;
   const perSegment: Record<string, { fetched: number; errors: string[] }> = {};
+  const watchedSites: IngestResult["watchedSites"] = {};
   const allErrors: string[] = [];
+
+  const storeItem = (item: FeedItem, title: string, source: string | null, segmentIds: SegmentId[]) => {
+    const existing = getByLinkStmt.get(item.link!) as ArticleRow | undefined;
+    const existingSegments: SegmentId[] = existing
+      ? (JSON.parse(existing.segments) as SegmentId[])
+      : [];
+
+    upsertStmt.run({
+      link: item.link!,
+      title,
+      snippet: item.contentSnippet?.slice(0, 500) ?? null,
+      source,
+      published_at: item.isoDate ?? item.pubDate ?? null,
+      fetched_at: new Date().toISOString(),
+      segments: JSON.stringify(Array.from(new Set([...existingSegments, ...segmentIds]))),
+    });
+
+    if (existing) {
+      updatedArticles += 1;
+    } else {
+      newArticles += 1;
+    }
+  };
 
   for (const segment of SEGMENTS) {
     perSegment[segment.id] = { fetched: 0, errors: [] };
@@ -92,34 +131,8 @@ export async function ingestAll(): Promise<IngestResult> {
         const feed = await parser.parseURL(googleNewsRssUrl(query));
         for (const item of feed.items ?? []) {
           if (!item.link || !item.title) continue;
-
           const { title, source } = extractSource(item, item.title);
-          const publishedAt = item.isoDate ?? item.pubDate ?? null;
-          const snippet = item.contentSnippet?.slice(0, 500) ?? null;
-
-          const existing = getByLinkStmt.get(item.link) as ArticleRow | undefined;
-          const existingSegments: SegmentId[] = existing
-            ? (JSON.parse(existing.segments) as SegmentId[])
-            : [];
-          const mergedSegments = Array.from(
-            new Set([...existingSegments, segment.id])
-          );
-
-          upsertStmt.run({
-            link: item.link,
-            title,
-            snippet,
-            source,
-            published_at: publishedAt,
-            fetched_at: new Date().toISOString(),
-            segments: JSON.stringify(mergedSegments),
-          });
-
-          if (existing) {
-            updatedArticles += 1;
-          } else {
-            newArticles += 1;
-          }
+          storeItem(item, title, source, [segment.id]);
           perSegment[segment.id].fetched += 1;
         }
       } catch (err) {
@@ -127,6 +140,29 @@ export async function ingestAll(): Promise<IngestResult> {
         perSegment[segment.id].errors.push(`"${query}": ${message}`);
         allErrors.push(`[${segment.id}] "${query}": ${message}`);
       }
+    }
+  }
+
+  for (const site of WATCHED_SITES) {
+    watchedSites[site] = { fetched: 0, unmatched: 0, errors: [] };
+    try {
+      const feed = await parser.parseURL(googleNewsRssUrl(watchedSiteQuery(site)));
+      for (const item of feed.items ?? []) {
+        if (!item.link || !item.title) continue;
+        const { title, source } = extractSource(item, item.title);
+        const segmentIds = matchSegments(title);
+        if (segmentIds.length === 0 || /\bArchives?$/i.test(title)) {
+          watchedSites[site].unmatched += 1;
+          continue;
+        }
+        storeItem(item, title, source, segmentIds);
+        watchedSites[site].fetched += 1;
+        for (const id of segmentIds) perSegment[id].fetched += 1;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      watchedSites[site].errors.push(message);
+      allErrors.push(`[site:${site}] ${message}`);
     }
   }
 
@@ -145,6 +181,7 @@ export async function ingestAll(): Promise<IngestResult> {
     newArticles,
     updatedArticles,
     perSegment: perSegment as Record<SegmentId, { fetched: number; errors: string[] }>,
+    watchedSites,
     durationMs: finishedAt - startedAt,
   };
 }

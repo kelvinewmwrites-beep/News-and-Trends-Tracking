@@ -41,7 +41,9 @@ Copy `.env.example` to `.env.local` and adjust as needed:
 
 ### Adding/tuning tracked segments and queries
 
-Edit `src/lib/segments.ts` — each segment has a list of free-text search queries (fed into Google News RSS) and a keyword list used to boost trend relevance and fallback content ideas.
+Edit `src/lib/segments.ts` — each segment has a list of free-text search queries (fed into Google News RSS) and a keyword list used to boost trend relevance and fallback content ideas. Google News ranks plain queries by relevance (mostly older articles), so queries suffixed with `when:30d` are included to keep recent coverage flowing.
+
+To follow a specific publisher (e.g. a corporate-services firm's guides and regulatory explainers), add its domain to `WATCHED_SITES`. Each ingest fetches that site's recent posts once and routes each post to every segment whose `matchTerms` appear in its title; posts matching no segment are skipped and counted as `unmatched` in the ingest result.
 
 ## Deployment notes
 

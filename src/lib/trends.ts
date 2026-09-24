@@ -72,7 +72,9 @@ export function computeTrends(segment: SegmentId, days = 14, topN = 15): TrendRe
   const dayCounts = new Map<string, number>();
 
   for (const article of articles) {
-    const text = `${article.title} ${article.snippet ?? ""}`;
+    // Google News snippets repeat the publisher name; drop it so sources don't surface as trends.
+    const rawText = `${article.title} ${article.snippet ?? ""}`;
+    const text = article.source ? rawText.split(article.source).join(" ") : rawText;
     const unigrams = tokenize(text);
     const phrases = [...unigrams, ...bigrams(unigrams)];
     const when = article.publishedAt ?? article.fetchedAt;
