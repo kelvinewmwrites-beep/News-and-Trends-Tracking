@@ -27,10 +27,12 @@ export interface SegmentDef {
 const RECENT = "when:30d";
 
 /** Practitioner sites (guides, regulatory explainers) scanned in full and routed to segments by title. */
-export const WATCHED_SITES = ["rafflescorporateservices.com"];
+export const WATCHED_SITES = [
+  { domain: "rafflescorporateservices.com", source: "Raffles Corporate Services" },
+];
 
-export function watchedSiteQuery(site: string): string {
-  return `site:${site} ${RECENT}`;
+export function watchedSiteQuery(domain: string): string {
+  return `site:${domain} ${RECENT}`;
 }
 
 export const SEGMENTS: SegmentDef[] = [

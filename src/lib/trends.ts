@@ -12,13 +12,14 @@ const STOPWORDS = new Set([
   "new", "news", "says", "said", "say", "how", "what", "when", "where",
   "who", "why", "which", "amid", "amid", "their", "his", "her", "our",
   "your", "you", "we", "they", "he", "she", "singapore", "sg", "s'pore",
-  "2024", "2025", "2026",
+  "2024", "2025", "2026", "announces", "launches", "help", "helps", "best",
+  "guide", "choose", "decision", "tree",
 ]);
 
 const TOKEN_RE = /[a-z0-9][a-z0-9'&-]*/g;
 
 function tokenize(text: string): string[] {
-  return (text.toLowerCase().match(TOKEN_RE) ?? []).filter(
+  return (text.toLowerCase().replace(/[‘’]/g, "'").match(TOKEN_RE) ?? []).map((t) => t.replace(/'s$/, "")).filter(
     (t) => t.length >= 3 && !STOPWORDS.has(t)
   );
 }

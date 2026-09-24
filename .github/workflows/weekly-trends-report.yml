@@ -1,0 +1,41 @@
+name: Weekly trends report
+
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 01:00 UTC = 09:00 SGT
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-trends-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ingest news and write report
+        run: npm run report:weekly
+
+      - name: Commit report
+        run: |
+          git add reports/
+          if git diff --cached --quiet; then
+            echo "No report changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update weekly trends report ($(TZ=Asia/Singapore date +%F))"
+          git push

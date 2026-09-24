@@ -45,6 +45,18 @@ Edit `src/lib/segments.ts` — each segment has a list of free-text search queri
 
 To follow a specific publisher (e.g. a corporate-services firm's guides and regulatory explainers), add its domain to `WATCHED_SITES`. Each ingest fetches that site's recent posts once and routes each post to every segment whose `matchTerms` appear in its title; posts matching no segment are skipped and counted as `unmatched` in the ingest result.
 
+## Weekly trends report
+
+[`reports/weekly-trends.md`](reports/weekly-trends.md) summarises the past 7 days per segment: trending terms, the latest on-topic news, and practitioner guides from `WATCHED_SITES`, with links. Each week's report is also kept in `reports/archive/YYYY-MM-DD.md`.
+
+The `Weekly trends report` GitHub Actions workflow regenerates and commits it every Monday at 09:00 SGT (run it anytime from the Actions tab via "Run workflow"). To generate it locally:
+
+```bash
+npm run report:weekly
+```
+
+This runs a fresh ingest into `data/app.db` first, so it works without the dev server running.
+
 ## Deployment notes
 
 - The scheduler in `src/instrumentation.ts` requires a long-lived Node.js process (e.g. a VPS, container, or `next start` on a persistent host). On serverless platforms without persistent processes (e.g. Vercel serverless functions), set `SGNEWS_DISABLE_SCHEDULER=1` and instead call `POST /api/ingest` on a schedule (e.g. Vercel Cron, GitHub Actions, or any external scheduler).

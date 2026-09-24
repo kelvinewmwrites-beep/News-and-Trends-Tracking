@@ -143,7 +143,7 @@ export async function ingestAll(): Promise<IngestResult> {
     }
   }
 
-  for (const site of WATCHED_SITES) {
+  for (const { domain: site } of WATCHED_SITES) {
     watchedSites[site] = { fetched: 0, unmatched: 0, errors: [] };
     try {
       const feed = await parser.parseURL(googleNewsRssUrl(watchedSiteQuery(site)));
